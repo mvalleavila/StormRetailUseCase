@@ -32,6 +32,7 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Map;
 
 import static backtype.storm.utils.Utils.tuple;
@@ -39,10 +40,12 @@ import static backtype.storm.utils.Utils.tuple;
 @SuppressWarnings("serial")
 public class ProccesRetailTransactionBolt implements IBasicBolt {
 	
-	private String hbaseTableName;
+	private String hbaseStockTableName;
+	private String hbaseStockTempTableName;
 	
-	public ProccesRetailTransactionBolt(String hbaseTableName){
-		this.hbaseTableName = hbaseTableName;
+	public ProccesRetailTransactionBolt(String hbaseStockTableName, String hbaseStockTempTableName){
+		this.hbaseStockTableName = hbaseStockTableName;
+		this.hbaseStockTempTableName = hbaseStockTempTableName;
 	}
 
 
@@ -51,24 +54,23 @@ public class ProccesRetailTransactionBolt implements IBasicBolt {
     }
 
     /*
-     * Just output the word value with a count of 1.
-     * The HBaseBolt will handle incrementing the counter.
      */
     public void execute(Tuple input, BasicOutputCollector collector){
-    	Map<String,String> auditAttributes = (Map<String, String>) input.getValues().get(0);
-    	String host_user = new String(auditAttributes.get("host")).concat("|")
-    			.concat(auditAttributes.get("user"));
-    	String type = auditAttributes.get("type");
-    	if (type.equals("USER_LOGIN")){
-            collector.emit(tuple(host_user, 1));
+    	
+    	/* 
+    		TODO: Hacer recorrido de los productos -> ¿SACAR A UNA FUNCION EN TOOLS?
+    	*/
+    	Map<String,Object> operationInfo = (Map<String, Object>) input.getValues().get(0);
+    	
+    	String op_type = operationInfo.get("op_type").toString();
+    	
+    	if (op_type.equals("tx"))
+    	{
+    		// Procces all products in transaction
+    		proccesAllProducts(operationInfo, collector);
     	}
-    	else if (type.equals("USER_LOGOUT")){
-    		try {
-				if (isCounterGreatThanZero(this.hbaseTableName,host_user))
-					collector.emit(tuple(host_user, -1));
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
+    	else{
+    		System.out.println("ERROR: ProccesRetailTransactionBolt -  op_type not tx");
     	}
     }
 
@@ -77,7 +79,7 @@ public class ProccesRetailTransactionBolt implements IBasicBolt {
     }
 
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        declarer.declare(new Fields("host-user", "count"));
+        declarer.declare(new Fields("shop-product", "stock"));
     }
 
     @Override
@@ -85,18 +87,76 @@ public class ProccesRetailTransactionBolt implements IBasicBolt {
         return null;
     }
     
-    private boolean isCounterGreatThanZero(String hbaseTableName, String hbaseRowName) throws IOException{
-		Configuration config = HBaseConfiguration.create();
-		HTable table = new HTable(config, hbaseTableName);
-		Get g = new Get(Bytes.toBytes(hbaseRowName));
-		Result r = table.get(g);
-		byte [] value = r.getValue(Bytes.toBytes("activeLogins"),Bytes.toBytes("count"));
-		long valueLong = Bytes.toLong(value);
-		table.close();
-    	if (valueLong > 0)    	
-    		return true;
-    	else
-    		return false;
+    private void proccesAllProducts(Map<String,Object> operationInfo, BasicOutputCollector collector)
+    {
+		ArrayList<Map<String,String>> allProducts = (ArrayList<Map<String,String>>)operationInfo.get("products");
+    	String shopName = operationInfo.get("shop_name").toString();
+    	Map<String,String> product = null;
+    	String stockRowKey, stockTempRowKey, productName = null;
+    	int productStock, productTxQuantity, productMinStock = 0;
+    	int txTemperature = (int) operationInfo.get("temperature");
+		
+		for (int i=0; i< allProducts.size(); i++)
+		{
+			//Procces product in position i
+			product = allProducts.get(i);
+			if (product.containsKey("product") && product.containsKey("quantity"))
+			{
+				productName = product.get("product");
+				stockRowKey = shopName + "|" + productName;
+				stockTempRowKey = shopName + "|" + productName + "|" + String.valueOf(txTemperature);				
+				
+				try {
+					productTxQuantity = Integer.parseInt(product.get("quantity"));
+					productStock = getProductStock(this.hbaseStockTableName,stockRowKey,"Stock","stock");
+					if (productStock <= 0)
+					{
+						// Don't do anything
+						System.out.println("WARN: ProccesRetailTransactionBolt - Shop|Product " + stockRowKey + "less than one");
+					}
+					else if ((productStock - productTxQuantity) < 0)
+					{
+						// Set product stock to 0
+						System.out.println("WARN: ProccesRetailTransactionBolt - Shop|Product " + stockRowKey + 
+								"minus sell in transaction less than 0, setting product stock to 0");
+						// Read product minimum stock based in stockTemp hbase table
+						productMinStock = getProductStock(this.hbaseStockTempTableName,stockTempRowKey,"MinStock","stock");
+						// sendEmailToDistributor
+						collector.emit(tuple(stockRowKey, (productStock*-1)));
+					}
+					else
+					{
+						// Decrement product stock
+						System.out.println("INFO: ProccesRetailTransactionBolt - Shop|Product " + stockRowKey + 
+								"setting to " + String.valueOf(productStock - productTxQuantity));
+						// Read product minimum stock based in stockTemp hbase table
+						
+						collector.emit(tuple(stockRowKey, (productStock - productTxQuantity)*-1));
+					}
+				} catch (IOException e) {
+					System.out.println("WARN: ProccesRetailTransactionBolt - Product " + i + "IOException");
+					e.printStackTrace();
+				}
+			}
+			else
+			{
+				System.out.println("WARN: ProccesRetailTransactionBolt - Product " + i + "haven't got product/quantity key");
+			}
+		}
     }
-
+    
+    private int getProductStock(String hbaseTableName, String hbaseRowKey, String columFamily,
+    		String qualifier) throws IOException
+    {
+    	Configuration config = HBaseConfiguration.create();
+		HTable table = new HTable(config, hbaseTableName);
+		Get get = new Get(Bytes.toBytes(hbaseRowKey));
+		Result result = table.get(get);
+		byte [] productStock = result.getValue(Bytes.toBytes(columFamily),Bytes.toBytes(qualifier));
+		table.close();
+    	if (productStock!=null && Bytes.toLong(productStock) >= 0)    	
+    		return Bytes.toInt(productStock);
+    	else
+    		return -1;
+    }
 }

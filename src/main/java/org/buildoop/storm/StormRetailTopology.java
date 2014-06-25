@@ -70,8 +70,8 @@ public class StormRetailTopology {
 		builder.setBolt("JSONParserBolt", JSONParserBolt, 1).shuffleGrouping("KafkaTransactionSpout");
 		builder.setBolt("JSONParserBolt", JSONParserBolt, 1).shuffleGrouping("KafkaStockSpout");
 		
-		builder.setBolt("ProccesTransactionBolt", proccesTransactionBolt, 1).shuffleGrouping("ParseBolt");
-		builder.setBolt("ProccesStockBolt", proccesStockBolt, 1).shuffleGrouping("ParseBolt");
+		builder.setBolt("ProccesTransactionBolt", proccesTransactionBolt, 1).shuffleGrouping("ParseBolt","transaction");
+		builder.setBolt("ProccesStockBolt", proccesStockBolt, 1).shuffleGrouping("ParseBolt","stock");
 		builder.setBolt("HBaseBolt", hbaseBolt, 1).fieldsGrouping("CountBolt",
 				new Fields("store|product"));
 
