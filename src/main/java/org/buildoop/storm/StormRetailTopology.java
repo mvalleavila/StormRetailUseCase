@@ -42,8 +42,8 @@ public class StormRetailTopology {
 		// Load properties for the storm topoology
 		String kafkaTransactionTopic = properties.getProperty("kafka.transaction.topic");
 		String kafkaStockTopic = properties.getProperty("kafka.stock.topic");
-		String hbaseTable = properties.getProperty("hbase.table.name");
-		String hbaseColumnFamily = properties.getProperty("hbase.column.family");
+		String hbaseStockTable = properties.getProperty("hbase.stock.table.name");
+		String hbaseStockTempTable = properties.getProperty("hbase.stock.temp.table.name");
 		
 		SpoutConfig kafkaTransactionConfig = new SpoutConfig(kafkaBrokerHosts, kafkaTransactionTopic, "",
 				"storm");
@@ -54,26 +54,27 @@ public class StormRetailTopology {
 		TopologyBuilder builder = new TopologyBuilder();
 		
 		SimpleHBaseMapper hBaseMapper = new SimpleHBaseMapper()
-				.withRowKeyField("store|product")
-				.withCounterFields(new Fields("quantity"))
-				.withColumnFields(new Fields("sent"))
-				.withColumnFamily(hbaseColumnFamily);
+				.withRowKeyField("shop|product")
+				.withCounterFields(new Fields("stock"))
+				.withColumnFields(new Fields("order"))
+				.withColumnFamily("Stock");
 		
-		HBaseBolt hbaseBolt = new HBaseBolt(hbaseTable, hBaseMapper);
+		HBaseBolt hbaseBolt = new HBaseBolt(hbaseStockTable, hBaseMapper);
 		JSONRetailParserBolt JSONParserBolt = new JSONRetailParserBolt();
-		ProccesRetailTransactionBolt proccesTransactionBolt = new ProccesRetailTransactionBolt(hbaseTable);
-		ProccesRetailStockBolt proccesStockBolt = new ProccesRetailStockBolt(hbaseTable);
+		ProccesRetailTransactionBolt proccesTransactionBolt = new ProccesRetailTransactionBolt(hbaseStockTable,hbaseStockTempTable);
+		ProccesRetailStockBolt proccesStockBolt = new ProccesRetailStockBolt(hbaseStockTable);
 		
 
 		builder.setSpout("KafkaTransactionSpout", new KafkaSpout(kafkaTransactionConfig), 1);
 		builder.setSpout("KafkaStockSpout", new KafkaSpout(kafkaStockConfig), 1);
-		builder.setBolt("JSONParserBolt", JSONParserBolt, 1).shuffleGrouping("KafkaTransactionSpout");
-		builder.setBolt("JSONParserBolt", JSONParserBolt, 1).shuffleGrouping("KafkaStockSpout");
+
+		builder.setBolt("JSONParserBolt", JSONParserBolt, 1).shuffleGrouping("KafkaTransactionSpout").shuffleGrouping("KafkaStockSpout");
+		//builder.setBolt("JSONParserBolt", JSONParserBolt, 1).shuffleGrouping("KafkaStockSpout");
 		
-		builder.setBolt("ProccesTransactionBolt", proccesTransactionBolt, 1).shuffleGrouping("ParseBolt","transaction");
-		builder.setBolt("ProccesStockBolt", proccesStockBolt, 1).shuffleGrouping("ParseBolt","stock");
-		builder.setBolt("HBaseBolt", hbaseBolt, 1).fieldsGrouping("CountBolt",
-				new Fields("store|product"));
+		builder.setBolt("ProccesTransactionBolt", proccesTransactionBolt, 1).shuffleGrouping("JSONParserBolt","transaction");
+		builder.setBolt("ProccesStockBolt", proccesStockBolt, 1).shuffleGrouping("JSONParserBolt","stock");
+		builder.setBolt("HBaseBolt", hbaseBolt, 1).fieldsGrouping("ProccesTransactionBolt",
+				new Fields("shop|product"));
 
 		return builder.createTopology();
 	}
@@ -112,7 +113,7 @@ public class StormRetailTopology {
 		String stormExecutionMode = properties.getProperty("storm.execution.mode","local");
 		int stormWorkersNumber = Integer.parseInt(properties.getProperty("storm.workers.number","2"));
 		int maxTaskParallism = Integer.parseInt(properties.getProperty("storm.max.task.parallelism","2"));
-		String topologyName = properties.getProperty("storm.topology.name","AuditActiveLoginsCount");
+		String topologyName = properties.getProperty("storm.topology.name","UnnamedTopology");
 		String zookeeperHosts = properties.getProperty("zookeeper.hosts");
 		int topologyBatchEmitMillis = Integer.parseInt(
 				properties.getProperty("storm.topology.batch.interval.miliseconds","2000"));

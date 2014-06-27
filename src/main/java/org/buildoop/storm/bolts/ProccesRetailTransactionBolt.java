@@ -57,17 +57,17 @@ public class ProccesRetailTransactionBolt implements IBasicBolt {
      */
     public void execute(Tuple input, BasicOutputCollector collector){
     	
-    	/* 
-    		TODO: Hacer recorrido de los productos -> ¿SACAR A UNA FUNCION EN TOOLS?
-    	*/
     	Map<String,Object> operationInfo = (Map<String, Object>) input.getValues().get(0);
     	
     	String op_type = operationInfo.get("op_type").toString();
     	
     	if (op_type.equals("tx"))
     	{
-    		// Procces all products in transaction
-    		proccesAllProducts(operationInfo, collector);
+    		try {
+				proccesTransactionOperation(operationInfo, collector);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
     	}
     	else{
     		System.out.println("ERROR: ProccesRetailTransactionBolt -  op_type not tx");
@@ -79,7 +79,7 @@ public class ProccesRetailTransactionBolt implements IBasicBolt {
     }
 
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        declarer.declare(new Fields("shop-product", "stock"));
+        declarer.declare(new Fields("shop|product", "stock", "order"));
     }
 
     @Override
@@ -87,14 +87,20 @@ public class ProccesRetailTransactionBolt implements IBasicBolt {
         return null;
     }
     
-    private void proccesAllProducts(Map<String,Object> operationInfo, BasicOutputCollector collector)
+    //TODO: Sacar esta funcion a transaction.tools ¿Clase -> Objeto transactionInfo?
+    private void proccesTransactionOperation(Map<String,Object> operationInfo, BasicOutputCollector collector) throws IOException
     {
 		ArrayList<Map<String,String>> allProducts = (ArrayList<Map<String,String>>)operationInfo.get("products");
     	String shopName = operationInfo.get("shop_name").toString();
     	Map<String,String> product = null;
     	String stockRowKey, stockTempRowKey, productName = null;
-    	int productStock, productTxQuantity, productMinStock = 0;
-    	int txTemperature = (int) operationInfo.get("temperature");
+    	long productStock,productMinStock = 0; 
+    	int productTxQuantity, order = 0;
+    	int txTemperature = Integer.parseInt((String) operationInfo.get("temperature"));
+    	
+    	HTable stockTable = openTable(this.hbaseStockTableName);
+    	HTable stockTempTable = openTable(this.hbaseStockTempTableName);
+    	Result resultRow = null;
 		
 		for (int i=0; i< allProducts.size(); i++)
 		{
@@ -102,17 +108,21 @@ public class ProccesRetailTransactionBolt implements IBasicBolt {
 			product = allProducts.get(i);
 			if (product.containsKey("product") && product.containsKey("quantity"))
 			{
+				System.out.println("--------------------------- ProccesRetailTransactionBolt.proccesAllProducts--> Producto " + i);
 				productName = product.get("product");
 				stockRowKey = shopName + "|" + productName;
-				stockTempRowKey = shopName + "|" + productName + "|" + String.valueOf(txTemperature);				
-				
+				stockTempRowKey = shopName + "|" + productName + "|" + String.valueOf(txTemperature);
+								
 				try {
 					productTxQuantity = Integer.parseInt(product.get("quantity"));
-					productStock = getProductStock(this.hbaseStockTableName,stockRowKey,"Stock","stock");
+					resultRow = getRow(stockTable,stockRowKey);
+					productStock = getCellLongValue(resultRow,"Stock","stock","Long");
+					order = (int) getCellLongValue(resultRow,"Stock","order","Int");
+					
 					if (productStock <= 0)
 					{
 						// Don't do anything
-						System.out.println("WARN: ProccesRetailTransactionBolt - Shop|Product " + stockRowKey + "less than one");
+						System.out.println("WARN: ProccesRetailTransactionBolt - Shop|Product:  " + stockRowKey + " less than one");
 					}
 					else if ((productStock - productTxQuantity) < 0)
 					{
@@ -120,9 +130,17 @@ public class ProccesRetailTransactionBolt implements IBasicBolt {
 						System.out.println("WARN: ProccesRetailTransactionBolt - Shop|Product " + stockRowKey + 
 								"minus sell in transaction less than 0, setting product stock to 0");
 						// Read product minimum stock based in stockTemp hbase table
-						productMinStock = getProductStock(this.hbaseStockTempTableName,stockTempRowKey,"MinStock","stock");
-						// sendEmailToDistributor
-						collector.emit(tuple(stockRowKey, (productStock*-1)));
+						resultRow = getRow(stockTempTable,stockTempRowKey);
+						productMinStock = getCellLongValue(resultRow,"MinStock","stock","String");
+						
+						/* TODO: FUERA ESTA FUNCION!! 
+						 * Tratar el shop_id que viene en la transaccion, para construir el json de peticion de stock 
+						¿timestamp lo genera en el momento de pedir el stock? */
+						long pedido = productMinStock + 10;
+						System.out.println("PEDIDO ----- tienda: "+ shopName + " product: " + productName + " quantity: " + pedido);
+						
+
+						collector.emit(tuple(stockRowKey, (productStock*-1), order));
 					}
 					else
 					{
@@ -130,8 +148,19 @@ public class ProccesRetailTransactionBolt implements IBasicBolt {
 						System.out.println("INFO: ProccesRetailTransactionBolt - Shop|Product " + stockRowKey + 
 								"setting to " + String.valueOf(productStock - productTxQuantity));
 						// Read product minimum stock based in stockTemp hbase table
+						resultRow = getRow(stockTempTable,stockTempRowKey);
+						productMinStock = getCellLongValue(resultRow,"MinStock","stock","String");
+						if (productStock - productTxQuantity < productMinStock)
+						{
+							// Send product 
+							/* TODO: FUERA ESTA FUNCION!! 
+							 * Tratar el shop_id que viene en la transaccion, para construir el json de peticion de stock 
+							¿timestamp lo genera en el momento de pedir el stock? */
+							long pedido = productMinStock - (productStock- productTxQuantity) + 10;
+							System.out.println("PEDIDO ----- tienda: "+ shopName + " product: " + productName + " quantity: " + pedido);
+						}
 						
-						collector.emit(tuple(stockRowKey, (productStock - productTxQuantity)*-1));
+						collector.emit(tuple(stockRowKey, (productTxQuantity)*-1,order));
 					}
 				} catch (IOException e) {
 					System.out.println("WARN: ProccesRetailTransactionBolt - Product " + i + "IOException");
@@ -143,20 +172,53 @@ public class ProccesRetailTransactionBolt implements IBasicBolt {
 				System.out.println("WARN: ProccesRetailTransactionBolt - Product " + i + "haven't got product/quantity key");
 			}
 		}
+		
+		stockTable.close();
+		stockTempTable.close();
     }
     
-    private int getProductStock(String hbaseTableName, String hbaseRowKey, String columFamily,
-    		String qualifier) throws IOException
+    //TODO: Sacar este metodo a un módulo aparte y hacerlo generico --> Extension de alguna clase de HBase? Tools de HBase??
+    private long getCellLongValue(Result result, String columFamily,String qualifier, String qualifierType) throws IOException
+    {
+		
+		byte [] productStock = result.getValue(Bytes.toBytes(columFamily),Bytes.toBytes(qualifier));
+		long productStockQuantity = 0;
+		
+		switch (qualifierType)
+		{
+		case "String":
+			productStockQuantity = Long.parseLong((Bytes.toString(productStock)));
+			break;
+		case "Int":
+			productStockQuantity = Bytes.toInt(productStock);
+			break;
+		case "Long":
+			productStockQuantity = Bytes.toLong(productStock);
+			break;
+		default:
+			System.out.println("WARN: getProductStock - Bad qualifierType: " + qualifierType);
+			return -1;				
+		}
+		
+    	if (productStock!=null && productStockQuantity >= 0)	
+    		return productStockQuantity;
+    	else
+    	{
+    		//TODO: Sacar a log4j, Especificar columna
+    		System.out.println("WARN: getProductStock - Bad column: " + qualifierType);
+    		return -1;
+    	}
+    }
+    
+    private Result getRow(HTable hbaseTable, String hbaseRowKey) throws IOException
+    {
+    	Get get = new Get(Bytes.toBytes(hbaseRowKey));
+		return hbaseTable.get(get);
+    }
+    
+    private HTable openTable(String hbaseTableName) throws IOException
     {
     	Configuration config = HBaseConfiguration.create();
-		HTable table = new HTable(config, hbaseTableName);
-		Get get = new Get(Bytes.toBytes(hbaseRowKey));
-		Result result = table.get(get);
-		byte [] productStock = result.getValue(Bytes.toBytes(columFamily),Bytes.toBytes(qualifier));
-		table.close();
-    	if (productStock!=null && Bytes.toLong(productStock) >= 0)    	
-    		return Bytes.toInt(productStock);
-    	else
-    		return -1;
+		return new HTable(config, hbaseTableName);
     }
 }

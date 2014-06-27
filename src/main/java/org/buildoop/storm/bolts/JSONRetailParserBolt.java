@@ -21,20 +21,22 @@ public class JSONRetailParserBolt implements IBasicBolt {
 
     public void execute(Tuple input, BasicOutputCollector collector) {
     	Map<String,Object> tupleValue = JSONRetailOperationParser.parseRetailtOperationInput(input.getString(0));
-    	
+
     	if (!tupleValue.isEmpty())
     	{
-    		String opType = operationType(tupleValue); 
-    		
+    		String opType = operationType(tupleValue);;
     		switch (opType)
     		{
     			case "stock":
     				collector.emit("stock",tuple(tupleValue));
+    				break;
     			case "tx":
     				collector.emit("transaction",tuple(tupleValue));
+    				break;
     			case "error":
     			default:
-    				System.out.println("Operation type not supported");   			
+    				System.out.println("WARN org.buildoop.storm.bolts.JSONRetailParserBolt : Operation type " + opType + " not supported");
+    				break;
     		}
     	}
     	
@@ -45,7 +47,7 @@ public class JSONRetailParserBolt implements IBasicBolt {
     }
 
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        declarer.declareStream("tx",new Fields("tupleValue"));
+        declarer.declareStream("transaction",new Fields("tupleValue"));
         declarer.declareStream("stock", new Fields("tupleValue"));
     }
 
