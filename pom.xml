@@ -11,7 +11,7 @@
     <groupId>org.buildoop.storm</groupId>
     <version>0.1.0</version>
     <modelVersion>4.0.0</modelVersion>
-    <artifactId>AuditActiveLogins</artifactId>
+    <artifactId>StormRetail</artifactId>
 
     <dependencies>
         <dependency>

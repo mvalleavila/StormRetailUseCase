@@ -11,7 +11,8 @@ import org.codehaus.jettison.json.JSONObject;
 
 public class JSONRetailOperationParser {
 	
-    public static Map<String,Object> parseRetailtOperationInput(String input) {
+    @SuppressWarnings("unchecked")
+	public static Map<String,Object> parseRetailtOperationInput(String input) {
 
     	/*
     	 * Data Structure:
@@ -35,7 +36,7 @@ public class JSONRetailOperationParser {
 			// Take entire line an insert in JSONObject
 			JSONObject operationJSONobject = new JSONObject(input);
 			// Iterator to browse main JSONobject
-			Iterator keys = operationJSONobject.keys();
+			Iterator<String> keys = operationJSONobject.keys();
 			
 			// General variables for not products information
 			String key = null;
@@ -58,9 +59,7 @@ public class JSONRetailOperationParser {
 			Iterator<String> productKeys = null;
 			// Auxiliary variable for save specific product attribute key
 			String productKey = null;
-			
 
-				
 			while ( keys.hasNext())
 			{				
 				key = keys.next().toString();

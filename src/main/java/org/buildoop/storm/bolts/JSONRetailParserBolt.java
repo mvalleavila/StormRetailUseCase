@@ -20,6 +20,9 @@ public class JSONRetailParserBolt implements IBasicBolt {
     }
 
     public void execute(Tuple input, BasicOutputCollector collector) {
+    	
+		System.out.println("---------------------- ENTRO EN execute JSONRetailParserBolt");
+    	
     	Map<String,Object> tupleValue = JSONRetailOperationParser.parseRetailtOperationInput(input.getString(0));
 
     	if (!tupleValue.isEmpty())
@@ -47,8 +50,8 @@ public class JSONRetailParserBolt implements IBasicBolt {
     }
 
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        declarer.declareStream("transaction",new Fields("tupleValue"));
-        declarer.declareStream("stock", new Fields("tupleValue"));
+        declarer.declareStream("transactionStream",new Fields("tupleValue"));
+        declarer.declareStream("stockStream", new Fields("tupleValue"));
     }
 
     @Override
