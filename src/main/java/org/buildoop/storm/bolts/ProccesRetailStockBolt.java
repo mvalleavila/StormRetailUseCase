@@ -66,7 +66,7 @@ public class ProccesRetailStockBolt implements IBasicBolt {
 	
 	@Override
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        declarer.declare(new Fields("host-user", "count"));
+		declarer.declare(new Fields("shop|product", "stock", "order"));
     }
 	
     
@@ -88,16 +88,19 @@ public class ProccesRetailStockBolt implements IBasicBolt {
 			
 			rowKey = shopName + "|" + productName;
 			
-			if (productName != null){
-				System.out.println("ERROR: proccesStockOperation -  product in position" + i + " name not found! "
-		   				+ "Chek JSON!!");
+			System.out.println("-----------11111----------- BUCLE posicion " + i + " ENTRO EN proccesStockOperation ProccesRetailStockBolt");
+			
+			if (productName == null){
+				System.out.println("ERROR: proccesStockOperation -  product in position " + i + " name not found! "
+		   				+ "Check JSON!!");
 			}
 			else {
+				System.out.println("-----------22222----------- BUCLE posicion " + i + " ENTRO EN proccesStockOperation ProccesRetailStockBolt");
 				try{
 					productStockOpQuantity = Integer.parseInt(product.get("quantity"));
 				} catch (NumberFormatException e){
 			   		System.out.println("ERROR: proccesStockOperation -  product " + productName + " quantity not found! "
-			   				+ "Chek JSON!!");
+			   				+ "Check JSON!!");
 				}
 	
 				if (productStockOpQuantity > 0)

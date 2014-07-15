@@ -2,15 +2,18 @@ package org.buildoop.storm.tools;
 
 import java.io.FileInputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import org.apache.storm.hbase.bolt.HBaseBolt;
+import org.apache.storm.hbase.bolt.mapper.HBaseMapper;
 import org.apache.storm.hbase.bolt.mapper.SimpleHBaseMapper;
 import org.buildoop.storm.bolts.JSONRetailParserBolt;
 import org.buildoop.storm.bolts.ProccesRetailStockBolt;
 import org.buildoop.storm.bolts.ProccesRetailTransactionBolt;
-import org.buildoop.storm.bolts.SendOrderProductBolt;
+import org.buildoop.storm.bolts.SendOrderProductToActiveMQBolt;
 
 import storm.kafka.BrokerHosts;
 import storm.kafka.KafkaSpout;
@@ -38,6 +41,14 @@ public class RetailTopologyTools{
 		String zookeeperHosts = properties.getProperty("zookeeper.hosts");
 		BrokerHosts kafkaBrokerHosts = new ZkHosts(zookeeperHosts);
 		
+		// ActiveMQ properties
+		String activeMQUser = properties.getProperty("activemq.user", "admin");
+        String activeMQPassword = properties.getProperty("activemq.password", "password");
+        String activeMQHost = properties.getProperty("activemq.host","localhost");
+        int activeMQPort = Integer.parseInt(properties.getProperty("activemq.port","61613")); 
+        String activeMQDestination = properties.getProperty("activemq.topic","/topic/event");
+        ActiveMQBoltConfig activeMQConfig = new ActiveMQBoltConfig(activeMQUser,activeMQPassword,activeMQHost,activeMQPort,activeMQDestination);
+        
 		SpoutConfig kafkaTransactionConfig = new SpoutConfig(kafkaBrokerHosts, kafkaTransactionTopic, "",
 				"storm");
 		SpoutConfig kafkaStockConfig = new SpoutConfig(kafkaBrokerHosts, kafkaStockTopic, "",
@@ -52,23 +63,26 @@ public class RetailTopologyTools{
 				.withColumnFields(new Fields("order"))
 				.withColumnFamily("Stock");
 		
-		HBaseBolt hbaseBolt = new HBaseBolt(hbaseStockTable, hBaseMapper);
+		//HBaseBolt hbaseBolt = new HBaseBolt(hbaseStockTable, hBaseMapper);
+		HBaseBolt hbaseBolt = new HBaseBolt(hbaseStockTable, hBaseMapper, properties);
+		
 		JSONRetailParserBolt JSONParserBolt = new JSONRetailParserBolt();
 		ProccesRetailTransactionBolt proccesTransactionBolt = new ProccesRetailTransactionBolt(hbaseStockTable,hbaseStockTempTable);
 		ProccesRetailStockBolt proccesStockBolt = new ProccesRetailStockBolt();
 		//TODO: Meterle este cuando haga el cliente de ActiveMQ
 		//SendOrderProductBolt senOrderProductBolt = new SendOrderProductBolt(activeMQConfig);
-		SendOrderProductBolt sendOrderProductBolt = new SendOrderProductBolt();
-
+		SendOrderProductToActiveMQBolt sendOrderProductBolt = new SendOrderProductToActiveMQBolt(activeMQConfig);
+		
 		builder.setSpout("KafkaTransactionSpout", new KafkaSpout(kafkaTransactionConfig), 1);
 		builder.setSpout("KafkaStockSpout", new KafkaSpout(kafkaStockConfig), 1);
 
-		builder.setBolt("JSONParserBolt", JSONParserBolt, 1).shuffleGrouping("KafkaTransactionSpout").shuffleGrouping("KafkaStockSpout");
+		builder.setBolt("JSONParserBolt", JSONParserBolt, 1).shuffleGrouping("KafkaTransactionSpout")
+					.shuffleGrouping("KafkaStockSpout");
 		
 		builder.setBolt("ProccesTransactionBolt", proccesTransactionBolt, 1).shuffleGrouping("JSONParserBolt","transactionStream");
 		builder.setBolt("ProccesStockBolt", proccesStockBolt, 1).shuffleGrouping("JSONParserBolt","stockStream");
 		builder.setBolt("HBaseBolt", hbaseBolt, 1).fieldsGrouping("ProccesTransactionBolt", "hbaseStream",
-				new Fields("shop|product"));
+				new Fields("shop|product")).fieldsGrouping("ProccesStockBolt", new Fields("shop|product"));
 		builder.setBolt("SendOrderProductBolt", sendOrderProductBolt, 1).shuffleGrouping("ProccesTransactionBolt",
 				"orderStream");
 		
@@ -121,6 +135,14 @@ public class RetailTopologyTools{
 		config.put(Config.TOPOLOGY_TRIDENT_BATCH_EMIT_INTERVAL_MILLIS, topologyBatchEmitMillis);
 		config.setNumWorkers(stormWorkersNumber);
 		config.setMaxTaskParallelism(maxTaskParallism);
+		
+		Map<String,String> test = new HashMap<String,String>();
+		test.put("hbase.cluster.distributed", "true");
+		test.put("hbase.rootdir", "hdfs://openbus01:8020/hbase");
+		test.put("hbase.zookeeper.quorum", "openbus01,openbus02,openbus03");
+		
+		config.put("hbase.config",test);
+		
 		StormTopology stormRetailTopology = buildTopology(properties);
 	
 		switch (stormExecutionMode){

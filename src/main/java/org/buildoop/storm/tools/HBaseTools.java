@@ -24,7 +24,6 @@ public class HBaseTools {
 		return hbaseTable.get(get);
     }
     
-	 //TODO: Sacar este metodo a un módulo aparte y hacerlo generico --> Extension de alguna clase de HBase? Tools de HBase??
     public static int getCellIntValue(Result result, String columFamily,String qualifier, String hbaseQualifierType) throws IOException, HBaseException
     {
 		

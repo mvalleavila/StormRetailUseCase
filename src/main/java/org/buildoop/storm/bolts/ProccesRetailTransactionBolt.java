@@ -27,7 +27,7 @@ import backtype.storm.tuple.Tuple;
 import org.apache.hadoop.hbase.client.HTable;
 import org.buildoop.storm.tools.IncrementAndOrderParams;
 import org.buildoop.storm.tools.HBaseTools;
-import org.buildoop.storm.tools.RetailTransactionTools;
+import org.buildoop.storm.tools.RetailOperationTools;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -96,30 +96,34 @@ public class ProccesRetailTransactionBolt implements IBasicBolt {
 		ArrayList<Map<String,String>> allProducts = (ArrayList<Map<String,String>>)operationInfo.get("products");
     	int numProducts=allProducts.size();
     	String shopName = operationInfo.get("shop_name").toString();
+    	String shopId = operationInfo.get("shop_id").toString();
     	int txTemperature = Integer.parseInt((String) operationInfo.get("temperature")); 
     	IncrementAndOrderParams incrementAndOrderParams;
     	HTable stockTable = HBaseTools.openTable(this.hbaseStockTableName);
     	HTable stockTempTable = HBaseTools.openTable(this.hbaseStockTempTableName);
     	String rowKey, productName=null;
     	Map<String,String> product = null;
+    	int orderQuantity = 0;
     	
     	for (int i=0; i < numProducts; i++)
     	{
     		product = allProducts.get(i);
         	productName = product.get("product");
         	rowKey = shopName + "|" + productName;
-    		incrementAndOrderParams = RetailTransactionTools.getProductIncrementOrder(rowKey,txTemperature,product,stockTable,stockTempTable);
-    		
+    		incrementAndOrderParams = RetailOperationTools.getProductIncrementOrderParams(rowKey,txTemperature,product,stockTable,stockTempTable);
+    		    		
     		if (incrementAndOrderParams != null){
-    			if (incrementAndOrderParams.getOrderQuantity() > 0){
+    			orderQuantity = incrementAndOrderParams.getOrderQuantity();
+    			if ( orderQuantity > 0){
+    				String orderProductInfo = RetailOperationTools.buildOrderProductInfo(shopName,shopId,productName,orderQuantity);
     				//TODO: Hacer pedido!! --> Stream para Order Bolt
-    				//TODO: collector.emit(tuple(rowKey,incrementAndOrderParams.getIncrement(), 1));
+    				collector.emit("orderStream",tuple(orderProductInfo));
     				//TODO: Estructura de productos para el pedido a ActiveMQ
-    				collector.emit(tuple(rowKey,incrementAndOrderParams.getIncrement(), 1));
+    				collector.emit("hbaseStream",tuple(rowKey,incrementAndOrderParams.getIncrement(), 1));
     				
     			}
     			else{
-    				collector.emit(tuple(rowKey,incrementAndOrderParams.getIncrement(), incrementAndOrderParams.getOrderFlag()));
+    				collector.emit("hbaseStream",tuple(rowKey,incrementAndOrderParams.getIncrement(), incrementAndOrderParams.getOrderFlag()));
     			}
     		}
     	}

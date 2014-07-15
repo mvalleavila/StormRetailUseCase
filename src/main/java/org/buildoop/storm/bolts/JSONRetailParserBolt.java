@@ -10,7 +10,7 @@ import backtype.storm.tuple.Tuple;
 
 import java.util.Map;
 
-import org.buildoop.storm.tools.JSONRetailOperationParser;;
+import org.buildoop.storm.tools.JSONRetailOperation;;
 
 @SuppressWarnings("serial")
 public class JSONRetailParserBolt implements IBasicBolt {
@@ -23,20 +23,30 @@ public class JSONRetailParserBolt implements IBasicBolt {
     	
 		System.out.println("---------------------- ENTRO EN execute JSONRetailParserBolt");
     	
-    	Map<String,Object> tupleValue = JSONRetailOperationParser.parseRetailtOperationInput(input.getString(0));
+    	Map<String,Object> tupleValue = JSONRetailOperation.parseJsonInputRetailtOperation(input.getString(0));
+    	String sourceComponent = input.getSourceComponent();
 
     	if (!tupleValue.isEmpty())
     	{
+    		System.out.println("---------------------- ENTRO EN switch JSONRetailParserBolt");
     		String opType = operationType(tupleValue);;
     		switch (opType)
     		{
     			case "stock":
-    				collector.emit("stock",tuple(tupleValue));
+    				if (sourceComponent.equals("KafkaStockSpout"))
+    					collector.emit("stockStream",tuple(tupleValue));
+    				else
+    					System.out.println("ERROR org.buildoop.storm.bolts.JSONRetailParserBolt : Topic stock not sending stock operations");    				
     				break;
     			case "tx":
-    				collector.emit("transaction",tuple(tupleValue));
+    				if (sourceComponent.equals("KafkaTransactionSpout"))
+    					collector.emit("transactionStream",tuple(tupleValue));
+    				else
+    					System.out.println("ERROR org.buildoop.storm.bolts.JSONRetailParserBolt : Topic transaction not sending transaction operations");
     				break;
     			case "error":
+    				System.out.println("WARN org.buildoop.storm.bolts.JSONRetailParserBolt : Operation type not found in input JSON");
+    				break;
     			default:
     				System.out.println("WARN org.buildoop.storm.bolts.JSONRetailParserBolt : Operation type " + opType + " not supported");
     				break;

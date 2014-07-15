@@ -30,14 +30,29 @@
             <version>3.2.1</version>
         </dependency>
         <dependency>
-           <groupId>com.github.ptgoetz</groupId>
+           <groupId>org.apache.storm</groupId>
            <artifactId>storm-hbase</artifactId>
 	   		<version>0.1.0</version>
         </dependency>
         <dependency>
-			<groupId>javax.mail</groupId>
-			<artifactId>javax.mail-api</artifactId>
-			<version>1.5.2</version>
+	        <groupId>org.apache.activemq</groupId>
+    	    <artifactId>activemq-client</artifactId>
+        	<version>5.10.0</version>
+    	</dependency>
+    	<dependency>
+      		<groupId>org.fusesource.stompjms</groupId>
+      		<artifactId>stompjms-client</artifactId>
+      		<version>1.19</version>
+    	</dependency>
+		<dependency>
+			<groupId>org.codehaus.jettison</groupId>
+			<artifactId>jettison</artifactId>
+			<version>1.2</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.storm</groupId>
+			<artifactId>storm-core</artifactId>
+			<version>0.9.1-incubating</version>
 		</dependency>
     </dependencies>
     <build>
@@ -76,11 +91,6 @@
             </plugin>
 
         </plugins>
-        <resources>
-        	<resource>
-        		<directory>resources</directory>
-        	</resource>
-        </resources>
     </build>
 
     <repositories>
@@ -113,9 +123,9 @@
             </activation>
             <dependencies>
                 <dependency>
-                    <groupId>storm</groupId>
-                    <artifactId>storm</artifactId>
-                    <version>0.9.0</version>
+                    <groupId>org.apache.storm</groupId>
+                    <artifactId>storm-core</artifactId>
+                    <version>0.9.1-incubating</version>
                 </dependency>
                 <dependency>
                     <groupId>org.slf4j</groupId>
@@ -133,9 +143,9 @@
             <id>cluster</id>
             <dependencies>
                 <dependency>
-                    <groupId>storm</groupId>
-                    <artifactId>storm</artifactId>
-                    <version>0.9.0</version>
+                    <groupId>org.apache.storm</groupId>
+                    <artifactId>storm-core</artifactId>
+                    <version>0.9.1-incubating</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
