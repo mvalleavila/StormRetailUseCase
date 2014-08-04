@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Properties;
 
 import org.apache.storm.hbase.bolt.HBaseBolt;
@@ -38,8 +39,8 @@ public class RetailTopologyTools{
 		String kafkaStockTopic = properties.getProperty("kafka.stock.topic");
 		String hbaseStockTable = properties.getProperty("hbase.stock.table.name");
 		String hbaseStockTempTable = properties.getProperty("hbase.stock.temp.table.name");
-		String zookeeperHosts = properties.getProperty("zookeeper.hosts");
-		BrokerHosts kafkaBrokerHosts = new ZkHosts(zookeeperHosts);
+		String kafkaZookeeperHosts = properties.getProperty("kafka.zookeeper.hosts");
+		BrokerHosts kafkaBrokerHosts = new ZkHosts(kafkaZookeeperHosts);
 		
 		// ActiveMQ properties
 		String activeMQUser = properties.getProperty("activemq.user", "admin");
@@ -126,7 +127,7 @@ public class RetailTopologyTools{
 		int stormWorkersNumber = Integer.parseInt(properties.getProperty("storm.workers.number","2"));
 		int maxTaskParallism = Integer.parseInt(properties.getProperty("storm.max.task.parallelism","2"));
 		String topologyName = properties.getProperty("storm.topology.name","UnnamedTopology");
-		String zookeeperHosts = properties.getProperty("zookeeper.hosts");
+		String stormZookeeperHosts = properties.getProperty("storm.zookeeper.hosts");
 		
 		int topologyBatchEmitMillis = Integer.parseInt(
 				properties.getProperty("storm.topology.batch.interval.miliseconds","2000"));
@@ -136,12 +137,14 @@ public class RetailTopologyTools{
 		config.setNumWorkers(stormWorkersNumber);
 		config.setMaxTaskParallelism(maxTaskParallism);
 		
+		/*
 		Map<String,String> test = new HashMap<String,String>();
 		test.put("hbase.cluster.distributed", "true");
 		test.put("hbase.rootdir", "hdfs://openbus01:8020/hbase");
 		test.put("hbase.zookeeper.quorum", "openbus01,openbus02,openbus03");
 		
 		config.put("hbase.config",test);
+		*/
 		
 		StormTopology stormRetailTopology = buildTopology(properties);
 	
@@ -151,8 +154,12 @@ public class RetailTopologyTools{
 				String nimbusPort = properties.getProperty("storm.nimbus.port","6627");
 				config.put(Config.NIMBUS_HOST, nimbusHost);
 				config.put(Config.NIMBUS_THRIFT_PORT, Integer.parseInt(nimbusPort));
-				config.put(Config.STORM_ZOOKEEPER_PORT, parseZkPort(zookeeperHosts));
-				config.put(Config.STORM_ZOOKEEPER_SERVERS, parseZkHosts(zookeeperHosts));
+				config.put(Config.STORM_ZOOKEEPER_PORT, parseZkPort(stormZookeeperHosts));
+				config.put(Config.STORM_ZOOKEEPER_SERVERS, parseZkHosts(stormZookeeperHosts));
+				
+				for (Entry e:config.entrySet()){
+					System.out.println(e.getKey() + ": " + e.getValue());
+				}
 				StormSubmitter.submitTopology(topologyName, config, stormRetailTopology);
 				break;
 			case ("local"):

@@ -29,7 +29,9 @@ public class JSONRetailParserBolt implements IBasicBolt {
     	if (!tupleValue.isEmpty())
     	{
     		System.out.println("---------------------- ENTRO EN switch JSONRetailParserBolt");
+    		System.out.println("---------------------- HOLA?");
     		String opType = operationType(tupleValue);;
+    		System.out.println("---------------------- opType: "+opType);
     		switch (opType)
     		{
     			case "stock":
